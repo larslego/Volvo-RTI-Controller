@@ -1,10 +1,9 @@
 #include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_system.h"
-#include "IRrecv.h"
-#include <BleKeyboard.h>
+#include "Arduino_FreeRTOS.h"
+#include "Keyboard.h"
+#include "IRremote.h"
 
+// Keys on the IR remote that came with the car.
 #define KEY_UP 3859785308
 #define KEY_DOWN 3187885456
 #define KEY_LEFT 1921496817
@@ -12,15 +11,15 @@
 #define KEY_ENTER 3810103859
 #define KEY_BACK 3663390897
 
+// The delay in which the screen needs a keep alive signal.
 #define RTI_DELAY 100
-#define IR_PIN 13
+// Pin on the ESP32.
+#define IR_PIN 7
 
 // Taskhandles
-TaskHandle_t pcSerialTaskHandle;
+TaskHandle_t pcSerialTaskHandle; // ONLY NEEDED FOR DEBUGGING.
 TaskHandle_t carSerialTaskHandle;
 TaskHandle_t irTaskHandle;
-
-int nonEnterValues[] = { 0 };
 
 // Connect:
 // Screen PIN 4 to Arduino PIN 2 (TX) 
@@ -31,13 +30,9 @@ enum display_mode_name {RTI_RGB, RTI_PAL, RTI_NTSC, RTI_OFF};
 const char display_modes[] = {0x40, 0x45, 0x4C, 0x46};
 const char brightness_levels[] = {0x20, 0x61, 0x62, 0x23, 0x64, 0x25, 0x26, 0x67, 0x68, 0x29, 0x2A, 0x2C, 0x6B, 0x6D, 0x6E, 0x2F};
 
-//int current_display_mode = RTI_OFF;
 int current_display_mode = RTI_NTSC;
 bool send_brightness = true;
 char current_brightness_level = 13;
-
-// TEMPORARY PERMANENT SOLUTION ????
-BleKeyboard keyboard;
 
 // Methods
 void rtiWrite(char byte);
@@ -51,12 +46,11 @@ void pcSerialTask(void* parameters);
 
 void setup() {
   Serial.begin(9600); // PC
-  Serial2.begin(2400); // Car
+  Serial1.begin(2400); // Car
 
   Serial.println("Available commands: \noff: Turns off the display\npal: enables and sets display to pal mode\nrgb: enables and sets display to rgb mode\nntsc: enables and sets display to ntsc mode\n0-15: brightness");
 
-  //keyboard.setName("RTI controller");
-  keyboard.begin();
+  Keyboard.begin();
 
   // Create pc task
   xTaskCreate(pcSerialTask, // Task function
@@ -115,7 +109,7 @@ void screenNTSC() {
 
 // Write a byte to the RTI display unit.
 void rtiWrite(char byte) {
-  Serial2.print(byte);
+  Serial1.print(byte);
   delay(RTI_DELAY);
 }
 
@@ -139,13 +133,13 @@ void pcSerialTask(void* parameters) {
       } else if (cmd == "ntsc") {
         screenNTSC();
       } else if (cmd == "left") {
-        keyboard.write(KEY_LEFT_ARROW);
+        Keyboard.write(KEY_LEFT_ARROW);
       } else if (cmd == "right") {
-        keyboard.write(KEY_RIGHT_ARROW);
+        Keyboard.write(KEY_RIGHT_ARROW);
       } else if (cmd == "enter") {
-        keyboard.write(KEY_RETURN);
+        Keyboard.write(KEY_RETURN);
       } else if (cmd == "back") {
-        keyboard.write(KEY_ESC);
+        Keyboard.write(KEY_ESC);
       }
       
       /* else {
@@ -195,31 +189,26 @@ void irTask(void* parameters) {
   // Loop
   while (true) {
     if (irrecv.decode(&results)) {
-      // if (results.value >> 32) { // print() & println() can't handle printing long longs. (uint64_t)
-      //   Serial.print((uint32_t) (results.value >> 32), HEX);  // print the first part of the message
-      // }
-
       if (results.value == KEY_UP) {
         //Serial.println("Up");
-        keyboard.write(KEY_UP_ARROW);
+        //Keyboard.write(KEY_UP_ARROW);
       } else if (results.value == KEY_DOWN) {
         //Serial.println("Down");
-        keyboard.write(KEY_DOWN_ARROW);
+        //Keyboard.write(KEY_DOWN_ARROW);
       } else if (results.value == KEY_LEFT) {
         //Serial.println("Left");
-        keyboard.write(KEY_LEFT_ARROW);
+        //Keyboard.write(KEY_LEFT_ARROW);
       } else if (results.value == KEY_RIGHT) {
         //Serial.println("Right");
-        keyboard.write(KEY_RIGHT_ARROW);
+        //Keyboard.write(KEY_RIGHT_ARROW);
       } else if (results.value == KEY_BACK) {
         //Serial.println("Back");
-        keyboard.write(KEY_ESC);
+        //Keyboard.write(KEY_ESC);
       } else if (results.value == KEY_ENTER) { // KEY_ENTER
         //Serial.println("Enter");
-        keyboard.write(KEY_RETURN);
+        //Keyboard.write(KEY_RETURN);
       }
 
-      //Serial.println((uint32_t) (results.value & 0xFFFFFFFF), HEX); // print the second part of the message
       irrecv.resume();  // Receive the next value
       vTaskDelay(RTI_DELAY / portTICK_PERIOD_MS);
     }
