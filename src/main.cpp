@@ -13,7 +13,7 @@
 
 // The delay in which the screen needs a keep alive signal.
 #define RTI_DELAY 100
-// Pin on the ESP32.
+// Pin on the Pro Micro.
 #define IR_PIN 7
 
 // Taskhandles
@@ -21,10 +21,6 @@ TaskHandle_t pcSerialTaskHandle; // ONLY NEEDED FOR DEBUGGING.
 TaskHandle_t carSerialTaskHandle;
 TaskHandle_t irTaskHandle;
 
-// Connect:
-// Screen PIN 4 to Arduino PIN 2 (TX) 
-// Screen PIN 7 to Arduino ground
-// Screen PIN 10 is composite video.
 //https://www.swedespeed.com/threads/volvo-rti-navigation-project-with-android-odroid-platform-controlled-with-arduino.434729/
 enum display_mode_name {RTI_RGB, RTI_PAL, RTI_NTSC, RTI_OFF};
 const char display_modes[] = {0x40, 0x45, 0x4C, 0x46};
