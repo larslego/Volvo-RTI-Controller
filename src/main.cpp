@@ -5,7 +5,7 @@
 #include <mcp2515.h>
 
 #define IR_BUTTON_COUNT 6
-unsigned int irRemoteKeys[] =    { 86,           98,             90,             94,              78,         106 };
+unsigned int irRemoteKeys[] = { 86,     98,             90,             94,              78,         106 };
 byte irKeyboardKeys[] = { KEY_UP_ARROW, KEY_DOWN_ARROW, KEY_LEFT_ARROW, KEY_RIGHT_ARROW, KEY_RETURN, KEY_ESC };
 
 // The delay in which the screen needs a keep alive signal.
@@ -14,9 +14,6 @@ byte irKeyboardKeys[] = { KEY_UP_ARROW, KEY_DOWN_ARROW, KEY_LEFT_ARROW, KEY_RIGH
 #define HID_REPORT_DELAY 50
 // Pin on the Pro Micro.
 #define IR_PIN 7
-
-// PC variables
-
 
 // Car variables
 //https://www.swedespeed.com/threads/volvo-rti-navigation-project-with-android-odroid-platform-controlled-with-arduino.434729/
@@ -66,8 +63,6 @@ void setup() {
   irrecv.enableIRIn();
 
   // CANbus setup
-  // Setup
-
   // mcp2515.reset();
   // mcp2515.setBitrate(CAN_125KBPS);
   // mcp2515.setNormalMode();
