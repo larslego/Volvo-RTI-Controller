@@ -5,7 +5,7 @@
 #include <mcp2515.h>
 
 #define IR_BUTTON_COUNT 6
-int irRemoteKeys[] =    { 86,           98,             90,             94,              78,         106 };
+unsigned int irRemoteKeys[] =    { 86,           98,             90,             94,              78,         106 };
 byte irKeyboardKeys[] = { KEY_UP_ARROW, KEY_DOWN_ARROW, KEY_LEFT_ARROW, KEY_RIGHT_ARROW, KEY_RETURN, KEY_ESC };
 
 // The delay in which the screen needs a keep alive signal.
@@ -22,11 +22,11 @@ byte irKeyboardKeys[] = { KEY_UP_ARROW, KEY_DOWN_ARROW, KEY_LEFT_ARROW, KEY_RIGH
 //https://www.swedespeed.com/threads/volvo-rti-navigation-project-with-android-odroid-platform-controlled-with-arduino.434729/
 enum display_mode_name {RTI_RGB, RTI_PAL, RTI_NTSC, RTI_OFF};
 const char display_modes[] = {0x40, 0x45, 0x4C, 0x46};
-const char brightness_levels[] = {0x20, 0x61, 0x62, 0x23, 0x64, 0x25, 0x26, 0x67, 0x68, 0x29, 0x2A, 0x2C, 0x6B, 0x6D, 0x6E, 0x2F};
+int brightness_levels[] = {0x20, 0x61, 0x62, 0x23, 0x64, 0x25, 0x26, 0x67, 0x68, 0x29, 0x2A, 0x2C, 0x6B, 0x6D, 0x6E, 0x2F};
 
 int current_display_mode = RTI_NTSC;
 bool send_brightness = true;
-char current_brightness_level = 13;
+int current_brightness_level = 13;
 unsigned long lastRTIWrite = 0;
 
 // IR variables
