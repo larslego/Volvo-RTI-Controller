@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <Keyboard.h>
 #include "IRremote.h"
-//#include <SPI.h>
 #include <mcp2515.h>
 
 #include "pro_micro_pins.h"
@@ -15,7 +14,7 @@ byte irKeyboardKeys[] = { KEY_UP_ARROW, KEY_DOWN_ARROW, KEY_LEFT_ARROW, KEY_RIGH
 // The delay in which the screen needs a keep alive signal.
 #define RTI_DELAY 100
 // Delay between sending new key presses to the host.
-#define HID_REPORT_DELAY 50
+#define HID_REPORT_DELAY 100
 
 // Car variables
 //https://www.swedespeed.com/threads/volvo-rti-navigation-project-with-android-odroid-platform-controlled-with-arduino.434729/
@@ -27,6 +26,8 @@ int current_display_mode = RTI_NTSC;
 bool send_brightness = true;
 int current_brightness_level = 13;
 unsigned long lastRTIWrite = 0;
+
+bool isCarTurnedOff = true;
 
 // IR variables
 IRrecv irrecv(RTI_IR_PIN);
@@ -54,16 +55,17 @@ void onKeyStateRead(int newKeyState);
 
 void setup() {
   // PC setup
-  Serial.begin(9600);
-  while (!Serial) delay(10);
-  Serial.println("Available commands: \noff: Turns off the display\npal: enables and sets display to pal mode\nrgb: enables and sets display to rgb mode\nntsc: enables and sets display to ntsc mode\n0-15: brightness");
-  //Keyboard.begin();
+  // Serial.begin(9600);
+  // while (!Serial) delay(10);
+  // Serial.println("Available commands: \noff: Turns off the display\npal: enables and sets display to pal mode\nrgb: enables and sets display to rgb mode\nntsc: enables and sets display to ntsc mode\n0-15: brightness");
+  Keyboard.begin();
 
   delay(15);
 
   // Car setup
   Serial1.begin(2400);
-  pinMode(RELAY_PIN, OUTPUT); // Enable relay control.
+  pinMode(ODROID_PWR_PIN, OUTPUT); // Enable relay control.
+  onKeyStateRead(-1);
 
   delay(15);
   // IR setup
@@ -85,35 +87,40 @@ void setup() {
 }
 
 void loop() {
-  pcSerialTask();
-  carSerialTask();
-  irTask();
+  //pcSerialTask();
+
+  if (!isCarTurnedOff) {
+    delay(5);
+    carSerialTask();
+    irTask();
+  }
+
+  
   readCANbusTask();
-  delay(15);
 }
 
 // Turns the screen off.
 void screenOFF() {
   current_display_mode = RTI_OFF;
-  Serial.println("Turning screen off");
+  //Serial.println("Turning screen off");
 }
 
 // Sets the screen to RGB input mode.
 void screenRGB() {
   current_display_mode = RTI_RGB;
-  Serial.println("RGB Mode");
+  //Serial.println("RGB Mode");
 }
 
 // Sets the screen to PAL input mode.
 void screenPAL() {
   current_display_mode = RTI_PAL;
-  Serial.println("PAL Mode");
+  //Serial.println("PAL Mode");
 }
 
 // Sets the screen to NTSC input mode.
 void screenNTSC() {
   current_display_mode = RTI_NTSC;
-  Serial.println("NTSC Mode");
+  //Serial.println("NTSC Mode");
 }
 
 // Write a byte to the RTI display unit.
@@ -128,31 +135,31 @@ void pcSerialTask() {
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     
-    if (cmd == "off") {
-      screenOFF();
-    } else if (cmd == "pal") {
-      screenPAL();
-    } else if (cmd == "rgb") {
-      screenRGB();
-    } else if (cmd == "ntsc") {
-      screenNTSC();
-    } else if (cmd == "left") {
-      Keyboard.write(KEY_LEFT_ARROW);
-    } else if (cmd == "right") {
-      Keyboard.write(KEY_RIGHT_ARROW);
-    } else if (cmd == "enter") {
-      Keyboard.write(KEY_RETURN);
-    } else if (cmd == "back") {
-      Keyboard.write(KEY_ESC);
-    } else if (cmd == "key -1") {
-      onKeyStateRead(-1);
-    } else if (cmd == "key 0") {
-      onKeyStateRead(0);
-    } else if (cmd == "key 1") {
-      onKeyStateRead(1);
-    } else if (cmd == "key 2") {
-      onKeyStateRead(2);
-    }
+    // if (cmd == "off") {
+    //   screenOFF();
+    // } else if (cmd == "pal") {
+    //   screenPAL();
+    // } else if (cmd == "rgb") {
+    //   screenRGB();
+    // } else if (cmd == "ntsc") {
+    //   screenNTSC();
+    // } else if (cmd == "left") {
+    //   Keyboard.write(KEY_LEFT_ARROW);
+    // } else if (cmd == "right") {
+    //   Keyboard.write(KEY_RIGHT_ARROW);
+    // } else if (cmd == "enter") {
+    //   Keyboard.write(KEY_RETURN);
+    // } else if (cmd == "back") {
+    //   Keyboard.write(KEY_ESC);
+    // } else if (cmd == "key -1") {
+    //   onKeyStateRead(-1);
+    // } else if (cmd == "key 0") {
+    //   onKeyStateRead(0);
+    // } else if (cmd == "key 1") {
+    //   onKeyStateRead(1);
+    // } else if (cmd == "key 2") {
+    //   onKeyStateRead(2);
+    // }
     
     /* else {
       send_brightness = true;
@@ -183,27 +190,27 @@ void carSerialTask() {
 // This task handles the serial data that is received from the IR remote
 // on the IR sensor on the RTI display.
 void irTask() {
-    if (irrecv.decode()) {
-      for (int i = 0; i < IR_BUTTON_COUNT; i++) {
-        if (irrecv.decodedIRData.decodedRawData == irRemoteKeys[i]) {
-          unsigned long currentMillis = millis();
-          // If the new key (compared to previously pressed key) is the NOT same, OR the report timeout has passed, report the new key. 
-          if ((lastPressedKey == irKeyboardKeys[i] && (currentMillis - lastKeyReportTime > HID_REPORT_DELAY)) || lastPressedKey != irKeyboardKeys[i]) {
-            // Report the key to the host.
-            lastPressedKey = irKeyboardKeys[i];
-            lastKeyReportTime = currentMillis;
-            //Keyboard.write(irKeyboardKeys[i]);
-            delay(1);
-            Serial.print("Key: ");
-            delay(1);
-            Serial.println(results.value);
-            break;
-          }
+  if (irrecv.decode()) {
+    for (int i = 0; i < IR_BUTTON_COUNT; i++) {
+      if (irrecv.decodedIRData.decodedRawData == irRemoteKeys[i]) {
+        unsigned long currentMillis = millis();
+        // If the new key (compared to previously pressed key) is the NOT same, OR the report timeout has passed, report the new key. 
+        if ((lastPressedKey == irKeyboardKeys[i] && (currentMillis - lastKeyReportTime > HID_REPORT_DELAY)) || lastPressedKey != irKeyboardKeys[i]) {
+          // Report the key to the host.
+          lastPressedKey = irKeyboardKeys[i];
+          lastKeyReportTime = currentMillis;
+          Keyboard.write(irKeyboardKeys[i]);
+          //delay(1);
+          //Serial.print("Key: ");
+          //delay(1);
+          //Serial.println(results.value);
+          break;
         }
       }
-
-      irrecv.resume();  // Receive the next value
     }
+
+    irrecv.resume();  // Receive the next value
+  }
 }
 
 void readCANbusTask() {
@@ -211,46 +218,50 @@ void readCANbusTask() {
   // HS Can = 500kbps
   // LS Can = 125kbps
   if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
-    Serial.print(canMsg.can_id & 0x1FFFFFFF, HEX); // print ID
+    // Serial.print(canMsg.can_id & 0x1FFFFFFF, HEX); // print ID
 
-    delay(2);
+    // delay(2);
     if ((canMsg.can_id & 0x1FFFFFFF) == CEM) {
-      Serial.print(" CEM:");
-      delay(2);
-      if (canMsg.data[4] == KEY_0) { Serial.print(" Key 0 "); onKeyStateRead(0); }
-      else if (canMsg.data[4] == KEY_1) { Serial.print(" Key I "); onKeyStateRead(1); }
-      else if (canMsg.data[4] == KEY_2) { Serial.print(" Key II "); onKeyStateRead(2); }
-      else if (canMsg.data[4] == NO_KEY) { Serial.print(" No key "); onKeyStateRead(-1); }
+      // Serial.print(" CEM:");
+      // delay(2);
+      if (canMsg.data[4] == KEY_0) { /*Serial.print(" Key 0 ");*/ onKeyStateRead(0); }
+      else if (canMsg.data[4] == KEY_1) { /*Serial.print(" Key I ");*/ onKeyStateRead(1); }
+      else if (canMsg.data[4] == KEY_2) { /*Serial.print(" Key II ");*/ onKeyStateRead(2); }
+      else if (canMsg.data[4] == NO_KEY) { /*Serial.print(" No key ");*/ onKeyStateRead(-1); }
     }
 
-    delay(2);
-    Serial.print(" ");
-    delay(2); 
-    Serial.print(canMsg.can_dlc, HEX); // print DLC
-    delay(2);
-    Serial.print(" ");
+    // delay(2);
+    // Serial.print(" ");
+    // delay(2); 
+    // Serial.print(canMsg.can_dlc, HEX); // print DLC
+    // delay(2);
+    // Serial.print(" ");
     
-    for (int i = 0; i < canMsg.can_dlc; i++)  {  // print the data
-      delay(2);
-      Serial.print(canMsg.data[i],HEX);
-      delay(2);
-      Serial.print(" ");
-    }
+    // for (int i = 0; i < canMsg.can_dlc; i++)  {  // print the data
+    //   delay(2);
+    //   Serial.print(canMsg.data[i],HEX);
+    //   delay(2);
+    //   Serial.print(" ");
+    // }
 
-    delay(2);
-    Serial.println();  
+    // delay(2);
+    // Serial.println();  
   } else {
-    delay(2);
-    Serial.println("CANbus LS read error.");
+    // delay(2);
+    // Serial.println("CANbus LS read error.");
   }
 }
 
 void onKeyStateRead(int newKeystate) {
-    if (newKeystate == 0 || newKeystate == -1) {
+    if (newKeystate == 1 || newKeystate == 0 || newKeystate == -1) {
         // Turn relay off.
-        pinMode(RELAY_PIN, LOW);
-    } else if (newKeystate == 1 || newKeystate == 2) {
+        pinMode(ODROID_PWR_PIN, LOW);
+        screenOFF();
+        isCarTurnedOff = true;
+    } else if (newKeystate == 2) {
         // Turn relay on.
-        pinMode(RELAY_PIN, HIGH);
+        pinMode(ODROID_PWR_PIN, HIGH);
+        isCarTurnedOff = false;
+        screenNTSC();
     }
 }
