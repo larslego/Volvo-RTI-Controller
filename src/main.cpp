@@ -61,6 +61,8 @@ void carSerialTask();
 void pcSerialTask();
 void readCANbusTask();
 void onKeyStateRead(int newKeyState);
+void pressButton(int key);
+void pressHatswitch(int key);
 
 void setup() {
   // Joystick setup
@@ -163,15 +165,8 @@ void irTask() {
           lastKeyReportTime = currentMillis;
 
           // Determine if the key is a button or dpad button.
-          if (i >= 4) {
-            Joystick.pressButton(irKeyboardKeys[i]);
-            delay(10);
-            Joystick.releaseButton(irKeyboardKeys[i]);    
-          } else {
-            Joystick.setHatSwitch(0, irKeyboardKeys[i]);
-            delay(10);
-            Joystick.setHatSwitch(0, -1);
-          }
+          if (i >= 4) pressButton(irKeyboardKeys[i]);
+          else pressHatswitch(irKeyboardKeys[i]);
           break;
         }
       }
@@ -207,4 +202,17 @@ void onKeyStateRead(int newKeystate) {
       isCarTurnedOff = false;
       screenNTSC();
   }
+}
+
+void pressButton(int key) {
+  Joystick.pressButton(key);
+  delay(10);
+  Joystick.releaseButton(key);    
+}
+
+
+void pressHatswitch(int key) {
+  Joystick.setHatSwitch(0, key);
+  delay(10);
+  Joystick.setHatSwitch(0, -1);
 }
