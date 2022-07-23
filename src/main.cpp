@@ -1,218 +1,89 @@
 #include <Arduino.h>
-#include "IRremote.h"
-#include <mcp2515.h>
-#include <Joystick.h>
 
+#include "vehicle.h"
+#include "components/HIDControl.h"
+#include "components/display.h"
+#include "Components/rtiRemote.h"
+#include "components/CANbus.h"
 #include "pro_micro_pins.h"
-#include "canbus_ids.h"
-#include "canbus_msgs.h"
 
-#define IR_BUTTON_COUNT 6
-unsigned int irRemoteKeys[] = { 86, 98, 90, 94, 78, 106 };
-#define HATSWITCH_UP 0
-#define HATSWITCH_DOWN 180
-#define HATSWITCH_LEFT 270
-#define HATSWITCH_RIGHT 90
-#define BUTTON_A 0
-#define BUTTON_B 1
-int irKeyboardKeys[] = { HATSWITCH_UP, HATSWITCH_DOWN, HATSWITCH_LEFT, HATSWITCH_RIGHT, BUTTON_A, BUTTON_B};
+void toggleTwelveVolt();
+void toggleRearViewCamera();
+void checkButtonPresses();
 
-Joystick_ Joystick(JOYSTICK_DEFAULT_REPORT_ID, JOYSTICK_TYPE_GAMEPAD, 2, 1,
-false, false, false, false, false, false, false, false, false, false, false);
+Vehicle vehicle;
+Display display;
+HIDControl hidControl;
+RTIRemote irRemote(&hidControl);
+CANbus canBus;
 
-// The delay in which the screen needs a keep alive signal.
-#define RTI_DELAY 100
-// Delay between sending new key presses to the host.
-#define HID_REPORT_DELAY 100
-
-// Car variables
-//https://www.swedespeed.com/threads/volvo-rti-navigation-project-with-android-odroid-platform-controlled-with-arduino.434729/
-enum display_mode_name {RTI_RGB, RTI_PAL, RTI_NTSC, RTI_OFF};
-const char display_modes[] = {0x40, 0x45, 0x4C, 0x46};
-int brightness_levels[] = {0x20, 0x61, 0x62, 0x23, 0x64, 0x25, 0x26, 0x67, 0x68, 0x29, 0x2A, 0x2C, 0x6B, 0x6D, 0x6E, 0x2F};
-
-int current_display_mode = RTI_NTSC;
-bool send_brightness = true;
-int current_brightness_level = 13;
-unsigned long lastRTIWrite = 0;
-
-bool isCarTurnedOff = true;
-
-// IR variables
-IRrecv irrecv(RTI_IR_PIN);
-decode_results results;
-unsigned long lastKeyReportTime = 0;
-int lastPressedKey = -1;
-
-// CANbus variables
-// CANbus https://github.com/autowp/arduino-mcp2515/blob/master/examples/CAN_read/CAN_read.ino
-// LOW speed
-struct can_frame canMsg;
-MCP2515 mcp2515(CANBUS_CS_PIN);
-
-// Methods
-void rtiWrite(char byte);
-void screenNTSC();
-void screenPal();
-void screenRGB();
-void screenOFF();
-void irTask();
-void carSerialTask();
-void pcSerialTask();
-void readCANbusTask();
-void onKeyStateRead(int newKeyState);
-void pressButton(int key);
-void pressHatswitch(int key);
+int currentVersionByte = 0;
 
 void setup() {
-  // Joystick setup
-  Joystick.begin();
-  delay(15);
-
-  // Car setup
-  Serial1.begin(2400);
-  pinMode(ODROID_PWR_PIN, OUTPUT); // Enable relay control.
-  onKeyStateRead(-1);
-  delay(15);
-
-  // IR setup
-  irrecv.enableIRIn();
-
-  // CANbus setup
-  mcp2515.reset();
-  mcp2515.setBitrate(CAN_125KBPS, MCP_8MHZ);
-  mcp2515.setConfigMode();
-  mcp2515.setFilterMask(MCP2515::MASK0, true, 0x00000000);
-  mcp2515.setFilter(MCP2515::RXF0, true, 0x00000000);
-  mcp2515.setFilter(MCP2515::RXF1, true, 0x00000000);
-  mcp2515.setFilterMask(MCP2515::MASK1, true, 0x00000000);
-  mcp2515.setFilter(MCP2515::RXF2, true, 0x00000000);
-  mcp2515.setFilter(MCP2515::RXF3, true, 0x00000000);
-  mcp2515.setFilter(MCP2515::RXF4, true, 0x00000000);
-  mcp2515.setFilter(MCP2515::RXF5, true, 0x00000000);
-  mcp2515.setListenOnlyMode();
+    pinMode(ODROID_PWR_PIN, OUTPUT);
+    pinMode(RV_CAM_PIN, OUTPUT);
 }
 
 void loop() {
-  if (!isCarTurnedOff) {
-    delay(15);
-    carSerialTask();
-    irTask();
-  }
+    canBus.update();
 
-  readCANbusTask();
+    if (vehicle.cem.keyPosition == 2 || vehicle.cem.keyPosition == 3) {
+        display.update(millis());
+        irRemote.update(millis());
+        vehicle.setCurrentVersionByte(canBus.data.currentVersionByte, NULL);
+        vehicle.setSteeringWheelButton(canBus.data.currentButton, checkButtonPresses);
+    }
+
+    vehicle.setKeyPosition(canBus.data.keyPosition, toggleTwelveVolt);
+    vehicle.setCurrentGear(canBus.data.currentGear, toggleRearViewCamera);
 }
 
-// Turns the screen off.
-void screenOFF() {
-  current_display_mode = RTI_OFF;
+// Enable or disable the Odroid N2+.
+void toggleTwelveVolt() {
+    // Using if statements so the code can correct itself if a message has been missed.
+    if (vehicle.cem.keyPosition == 0 || vehicle.cem.keyPosition == 1) {
+        digitalWrite(ODROID_PWR_PIN, LOW);
+        display.screenOFF();
+    } else if (vehicle.cem.keyPosition == 2 || vehicle.cem.keyPosition == 3) {
+        digitalWrite(ODROID_PWR_PIN, HIGH);
+        display.screenPAL();
+    }
 }
 
-// Sets the screen to RGB input mode.
-void screenRGB() {
-  current_display_mode = RTI_RGB;
+// Switch between Odroid or camera view.
+void toggleRearViewCamera() {
+    if (vehicle.tcm.currentGear == -1) {
+        digitalWrite(RV_CAM_PIN, HIGH);
+        display.screenNTSC();
+    } else {
+        digitalWrite(RV_CAM_PIN, LOW);
+        display.screenPAL();
+    }
 }
 
-// Sets the screen to PAL input mode.
-void screenPAL() {
-  current_display_mode = RTI_PAL;
-}
+void checkButtonPresses() {
+    if (currentVersionByte != vehicle.swm.currentVersionByte) {
+        currentVersionByte = vehicle.swm.currentVersionByte;
 
-// Sets the screen to NTSC input mode.
-void screenNTSC() {
-  current_display_mode = RTI_NTSC;
-}
-
-// Write a byte to the RTI display unit.
-void rtiWrite(char byte) {
-  Serial1.print(byte);
-  delay(RTI_DELAY);
-}
-
-// This task handles the serial that is received from the PC.
-// This task is mostly here for debug purposes.
-void pcSerialTask() {}
-
-// This task writes data to the RTI display.
-// The display needs a keep alive message every 100ms or so.
-// In that message is the current display, brightness and an (I presume) end byte (0x83).
-void carSerialTask() {
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastRTIWrite < RTI_DELAY) return;
-
-  rtiWrite(display_modes[current_display_mode]);
-  
-  if (send_brightness) {
-    rtiWrite(brightness_levels[current_brightness_level]);
-  } else {
-    rtiWrite(0x40);
-  }
-  rtiWrite(0x83); // ALWAYS NEEDS TO BE SEND LAST!
-  lastRTIWrite = currentMillis;
-}
-
-// This task handles the serial data that is received from the IR remote
-// on the IR sensor on the RTI display.
-void irTask() {
-  if (irrecv.decode()) {
-    for (int i = 0; i < IR_BUTTON_COUNT; i++) {
-      if (irrecv.decodedIRData.decodedRawData == irRemoteKeys[i]) {
-        unsigned long currentMillis = millis();
-        // If the new key (compared to previously pressed key) is the NOT same, OR the report timeout has passed, report the new key. 
-        if ((lastPressedKey == irKeyboardKeys[i] && (currentMillis - lastKeyReportTime > HID_REPORT_DELAY)) || lastPressedKey != irKeyboardKeys[i]) {
-          // Report the key to the host.
-          lastPressedKey = irKeyboardKeys[i];
-          lastKeyReportTime = currentMillis;
-
-          // Determine if the key is a button or dpad button.
-          if (i >= 4) pressButton(irKeyboardKeys[i]);
-          else pressHatswitch(irKeyboardKeys[i]);
-          break;
+        switch (vehicle.swm.currentButton) {
+            case DPAD_UP:
+            case DPAD_RIGHT:
+            case DPAD_DOWN:
+            case DPAD_LEFT:
+                hidControl.pressGamePadHatSwitch(vehicle.swm.currentButton);
+                break;
+            case DPAD_ENTER:
+            case DPAD_BACK:
+                hidControl.pressGamePadButton(vehicle.swm.currentButton);
+                break;
+            case SW_VOLUME_UP:
+            case SW_VOLUME_DOWN:
+            case SW_FAST_FORWARD:
+            case SW_REWIND:
+                hidControl.pressConsumerButton(vehicle.swm.currentButton);
+                break;
+            default:
+                break;
         }
-      }
     }
-
-    irrecv.resume();  // Receive the next value
-  }
-}
-
-void readCANbusTask() {
-  // 29bit
-  // HS Can = 500kbps
-  // LS Can = 125kbps
-  if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
-    if ((canMsg.can_id & 0x1FFFFFFF) == CEM) {
-      if (canMsg.data[4] == KEY_0) onKeyStateRead(0);
-      else if (canMsg.data[4] == KEY_1) onKeyStateRead(1);
-      else if (canMsg.data[4] == KEY_2) onKeyStateRead(2);
-      else if (canMsg.data[4] == NO_KEY) onKeyStateRead(-1);
-    }
-  }
-}
-
-void onKeyStateRead(int newKeystate) {
-  if (newKeystate == 1 || newKeystate == 0 || newKeystate == -1) {
-      // Turn relay off.
-      pinMode(ODROID_PWR_PIN, LOW);
-      screenOFF();
-      isCarTurnedOff = true;
-  } else if (newKeystate == 2) {
-      // Turn relay on.
-      pinMode(ODROID_PWR_PIN, HIGH);
-      isCarTurnedOff = false;
-      screenNTSC();
-  }
-}
-
-void pressButton(int key) {
-  Joystick.pressButton(key);
-  delay(10);
-  Joystick.releaseButton(key);    
-}
-
-
-void pressHatswitch(int key) {
-  Joystick.setHatSwitch(0, key);
-  delay(10);
-  Joystick.setHatSwitch(0, -1);
 }
